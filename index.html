@@ -116,7 +116,10 @@ body:JSON.stringify({action:'transform',columns:C,sample:D.slice(0,3),instructio
 H.push({role:'user',content:txt});
 H.push({role:'assistant',content:'OK'});
 try{
-var fn=new Function('data',b.js_code);
+var jsc=b.js_code;
+var m=jsc.match(/^function\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
+if(m)jsc=m[1];
+var fn=new Function('data',jsc);
 T=fn(JSON.parse(JSON.stringify(D)));
 }catch(e){
 console.error('JS exec error:',e,'Code:',b.js_code);
