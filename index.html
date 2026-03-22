@@ -1,352 +1,180 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clinical Data Transformer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-</head>
-<body class="bg-gray-50 min-h-screen flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-lg max-w-4xl w-full p-8">
-        <h1 class="text-2xl font-bold text-gray-800 mb-1">Clinical Data Transformer</h1>
-        <p class="text-sm text-gray-500 mb-6">
-            Chargez votre fichier Excel. Seuls les noms de colonnes et 3 lignes anonymisees sont envoyes au serveur.
-        </p>
-
-        <!-- Step indicator -->
-        <div id="stepIndicator" class="hidden flex items-center justify-center gap-2 mb-6 text-xs text-gray-400">
-            <span id="step1" class="px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-medium">1. Upload</span>
-            <span>&rarr;</span>
-            <span id="step2" class="px-3 py-1 rounded-full bg-gray-100">2. Instruction</span>
-            <span>&rarr;</span>
-            <span id="step3" class="px-3 py-1 rounded-full bg-gray-100">3. Apercu</span>
-            <span>&rarr;</span>
-            <span id="step4" class="px-3 py-1 rounded-full bg-gray-100">4. Telecharger</span>
-        </div>
-
-        <!-- DROP ZONE -->
-        <div id="dropZone"
-             class="border-2 border-dashed border-gray-300 rounded-xl p-10 text-center cursor-pointer hover:border-gray-400 transition mb-6">
-            <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-            </svg>
-            <p class="text-gray-600 font-medium">Glissez votre fichier Excel ici</p>
-            <p class="text-gray-400 text-sm mt-1">ou cliquez pour parcourir (.xlsx, .xls)</p>
-            <input id="fileInput" type="file" accept=".xlsx,.xls" class="hidden"/>
-        </div>
-
-        <!-- ORIGINAL DATA PREVIEW -->
-        <div id="originalSection" class="hidden mb-6">
-            <h2 class="text-sm font-semibold text-gray-700 mb-2">Donnees originales (3 lignes echantillons)</h2>
-            <div class="overflow-x-auto border rounded-lg max-h-48 overflow-y-auto">
-                <table id="originalTable" class="min-w-full text-xs text-left"></table>
-            </div>
-        </div>
-
-        <!-- INSTRUCTION INPUT -->
-        <div id="promptSection" class="hidden mb-6">
-            <label for="userPrompt" class="block text-sm font-semibold text-gray-700 mb-2">
-                Decrivez la transformation souhaitee
-            </label>
-            <textarea id="userPrompt" rows="3"
-                      class="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Ex: Fusionner les colonnes Nom et Prenom, convertir la colonne Date au format JJ/MM/AAAA..."></textarea>
-            <button id="previewBtn"
-                    class="mt-3 w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition">
-                Voir l'apercu
-            </button>
-        </div>
-
-        <!-- LOADING -->
-        <div id="loadingSection" class="hidden text-center py-6">
-            <div class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-r-transparent"></div>
-            <p class="text-sm text-gray-500 mt-3" id="loadingMsg">Apercu en cours de generation...</p>
-        </div>
-
-        <!-- TRANSFORMED PREVIEW -->
-        <div id="transformedSection" class="hidden mb-6">
-            <h2 class="text-sm font-semibold text-green-700 mb-2">Apercu du resultat transforme</h2>
-            <div class="overflow-x-auto border border-green-200 rounded-lg max-h-48 overflow-y-auto bg-green-50">
-                <table id="transformedTable" class="min-w-full text-xs text-left"></table>
-            </div>
-            <div id="descriptionBox" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p class="text-xs font-semibold text-blue-700 mb-1">Operations effectuees :</p>
-                <p id="descriptionText" class="text-xs text-blue-600"></p>
-            </div>
-        </div>
-
-        <!-- CONVERSATION HISTORY -->
-        <div id="historySection" class="hidden mb-4">
-            <p class="text-xs font-semibold text-gray-500 mb-2">Historique des instructions :</p>
-            <div id="historyList" class="space-y-1"></div>
-        </div>
-
-        <!-- MODIFY INPUT -->
-        <div id="modifySection" class="hidden mb-6">
-            <label for="modifyPrompt" class="block text-sm font-semibold text-gray-700 mb-2">
-                Modifications a apporter
-            </label>
-            <textarea id="modifyPrompt" rows="2"
-                      class="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                      placeholder="Ex: En fait, garder aussi la colonne Nom separee..."></textarea>
-            <div class="flex gap-3 mt-3">
-                <button id="modifyBtn"
-                        class="flex-1 bg-amber-500 text-white font-semibold py-3 rounded-xl hover:bg-amber-600 transition">
-                    Modifier l'apercu
-                </button>
-                <button id="validateBtn"
-                        class="flex-1 bg-green-600 text-white font-semibold py-3 rounded-xl hover:bg-green-700 transition">
-                    Valider et generer le script
-                </button>
-            </div>
-        </div>
-
-        <!-- RESULT -->
-        <div id="resultSection" class="hidden">
-            <div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
-                <p class="text-green-800 font-medium text-sm">Script Python genere avec succes !</p>
-            </div>
-            <button id="downloadBtn"
-                    class="w-full bg-green-600 text-white font-semibold py-3 rounded-xl hover:bg-green-700 transition">
-                Telecharger transform_data.py
-            </button>
-            <p class="text-xs text-gray-400 mt-2 text-center">
-                Executez le script localement — il ouvrira un selecteur de fichier pour choisir votre Excel.
-            </p>
-            <button id="restartBtn"
-                    class="mt-3 w-full border border-gray-300 text-gray-600 font-medium py-2 rounded-xl hover:bg-gray-50 transition text-sm">
-                Recommencer avec un autre fichier
-            </button>
-        </div>
-
-        <!-- ERROR -->
-        <div id="errorSection" class="hidden">
-            <div class="bg-red-50 border border-red-200 rounded-xl p-4">
-                <p class="text-red-800 font-medium text-sm" id="errorMsg"></p>
-            </div>
-        </div>
-    </div>
-
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clinical Data Transformer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+.sp{padding:6px 16px;border-radius:20px;font-size:14px;background:#f3f4f6;color:#6b7280}
+.sp.a{background:#dbeafe;color:#2563eb;font-weight:600}
+.sp.d{background:#d1fae5;color:#059669}
+.tw{max-height:400px;overflow:auto}
+.tw table{border-collapse:collapse;min-width:100%}
+.tw th{position:sticky;top:0;background:#f3f4f6;z-index:1;font-weight:600;color:#374151}
+.tw th,.tw td{padding:6px 12px;border-bottom:1px solid #e5e7eb;white-space:nowrap;font-size:13px}
+.tw tr:nth-child(even){background:#f9fafb}
+</style></head>
+<body class="bg-gray-50 min-h-screen">
+<div class="max-w-6xl mx-auto px-4 py-8">
+<h1 class="text-3xl font-bold text-gray-800">Clinical Data Transformer</h1>
+<p class="text-gray-500 mt-1 mb-6">Chargez votre Excel. Seuls les noms de colonnes et 3 lignes sont envoyes au serveur.</p>
+<div class="flex items-center justify-center gap-2 mb-8" id="stepper">
+<span class="sp a" data-step="1">1. Upload</span><span class="text-gray-400">&rarr;</span>
+<span class="sp" data-step="2">2. Instruction</span><span class="text-gray-400">&rarr;</span>
+<span class="sp" data-step="3">3. Apercu</span><span class="text-gray-400">&rarr;</span>
+<span class="sp" data-step="4">4. Telecharger</span></div>
+<div id="s1">
+<div id="dropzone" class="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center bg-white cursor-pointer hover:border-blue-400">
+<p class="text-gray-500 text-lg">Glissez un fichier Excel ici ou cliquez</p>
+<input type="file" id="fi" accept=".xlsx,.xls" class="hidden">
+</div></div>
+<div id="s2" class="hidden">
+<h2 class="text-lg font-semibold mb-2">Donnees originales (fichier complet)</h2>
+<div id="tO" class="tw border rounded-lg bg-white mb-6"></div>
+<h2 class="text-lg font-semibold mb-2">Decrivez la transformation souhaitee</h2>
+<textarea id="ins" rows="4" class="w-full border rounded-lg p-3" placeholder="Ex: Fusionner Nom et Prenom, convertir Date au format JJ/MM/AAAA..."></textarea>
+<div class="flex items-center gap-3 mt-3">
+<button id="bGo" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">Transformer</button>
+<span id="sp1" class="text-blue-600 hidden">Transformation en cours...</span>
+</div></div>
+<div id="s3" class="hidden">
+<h2 class="text-lg font-semibold mb-2">Apercu du resultat</h2>
+<div id="tT" class="tw border rounded-lg bg-white mb-6"></div>
+<h2 class="text-lg font-semibold mb-2">Modifications supplementaires ?</h2>
+<textarea id="ref" rows="3" class="w-full border rounded-lg p-3" placeholder="Decrivez les ajustements souhaites..."></textarea>
+<div class="flex items-center gap-3 mt-3">
+<button id="bRef" class="bg-yellow-500 text-white px-6 py-2 rounded-lg hover:bg-yellow-600 disabled:opacity-50">Modifier</button>
+<button id="bOk" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">Valider</button>
+<span id="sp2" class="text-blue-600 hidden">Modification en cours...</span>
+</div></div>
+<div id="s4" class="hidden">
+<h2 class="text-lg font-semibold mb-2">Resultat final</h2>
+<div id="tF" class="tw border rounded-lg bg-white mb-6"></div>
+<div class="flex gap-3 mt-4">
+<button id="bXl" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">Telecharger Excel</button>
+<button id="bPy" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Telecharger Script Python</button>
+<button id="bRe" class="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600">Recommencer</button>
+</div></div></div>
 <script>
-const BACKEND_URL = "https://europe-west9-clinical-data-transformer.cloudfunctions.net/clinical-transform";
-
-const dropZone         = document.getElementById("dropZone");
-const fileInput        = document.getElementById("fileInput");
-const stepIndicator    = document.getElementById("stepIndicator");
-const originalSec      = document.getElementById("originalSection");
-const originalTable    = document.getElementById("originalTable");
-const promptSec        = document.getElementById("promptSection");
-const userPrompt       = document.getElementById("userPrompt");
-const previewBtn       = document.getElementById("previewBtn");
-const loadingSec       = document.getElementById("loadingSection");
-const loadingMsg       = document.getElementById("loadingMsg");
-const transformedSec   = document.getElementById("transformedSection");
-const transformedTable = document.getElementById("transformedTable");
-const descriptionText  = document.getElementById("descriptionText");
-const historySec       = document.getElementById("historySection");
-const historyList      = document.getElementById("historyList");
-const modifySec        = document.getElementById("modifySection");
-const modifyPrompt     = document.getElementById("modifyPrompt");
-const modifyBtn        = document.getElementById("modifyBtn");
-const validateBtn      = document.getElementById("validateBtn");
-const resultSec        = document.getElementById("resultSection");
-const downloadBtn      = document.getElementById("downloadBtn");
-const restartBtn       = document.getElementById("restartBtn");
-const errorSec         = document.getElementById("errorSection");
-const errorMsg         = document.getElementById("errorMsg");
-
-let extractedPayload   = null;
-let conversationHistory = [];
-let generatedScript    = null;
-
-function setStep(n) {
-    [1,2,3,4].forEach(i => {
-        const el = document.getElementById("step" + i);
-        if (i === n)      { el.className = "px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-medium"; }
-        else if (i < n)   { el.className = "px-3 py-1 rounded-full bg-green-100 text-green-700"; }
-        else              { el.className = "px-3 py-1 rounded-full bg-gray-100 text-gray-400"; }
-    });
-}
-
-dropZone.addEventListener("click", () => fileInput.click());
-dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.style.borderColor = "#3b82f6"; });
-dropZone.addEventListener("dragleave", () => { dropZone.style.borderColor = ""; });
-dropZone.addEventListener("drop", e => {
-    e.preventDefault();
-    dropZone.style.borderColor = "";
-    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+(function(){
+var API='https://europe-west9-clinical-data-transformer.cloudfunctions.net/clinical-transform';
+var D=[],C=[],T=[],py='',H=[];
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function tbl(el,data,cols){
+if(!data||!data.length){el.innerHTML='<p class="p-4 text-gray-400">Aucune donnee</p>';return;}
+var c=cols||Object.keys(data[0]);
+var h='<table><thead><tr>';
+c.forEach(function(k){h+='<th>'+esc(k)+'</th>';});
+h+='</tr></thead><tbody>';
+data.forEach(function(r){
+h+='<tr>';
+c.forEach(function(k){h+='<td>'+esc(r[k]!=null?String(r[k]):'')+'</td>';});
+h+='</tr>';
 });
-fileInput.addEventListener("change", e => { if (e.target.files.length) handleFile(e.target.files[0]); });
-
-function handleFile(file) {
-    resetUI();
-    const reader = new FileReader();
-    reader.onload = e => {
-        try {
-            const wb   = XLSX.read(e.target.result, { type: "array" });
-            const ws   = wb.Sheets[wb.SheetNames[0]];
-            const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
-            if (!json.length) throw new Error("Le fichier semble vide.");
-            const columns = Object.keys(json[0]);
-            const sample  = json.slice(0, 3).map(row => {
-                const out = {};
-                columns.forEach(c => {
-                    const val = String(row[c]);
-                    out[c] = val.length > 60 ? val.slice(0, 57) + "..." : val;
-                });
-                return out;
-            });
-            extractedPayload = { columns, sample };
-            renderTable(originalTable, columns, sample);
-            stepIndicator.classList.remove("hidden");
-            originalSec.classList.remove("hidden");
-            promptSec.classList.remove("hidden");
-            dropZone.classList.add("hidden");
-            setStep(2);
-        } catch (err) {
-            showError("Erreur de lecture du fichier : " + err.message);
-        }
-    };
-    reader.readAsArrayBuffer(file);
+h+='</tbody></table>';
+h+='<div class="text-xs text-gray-400 p-2">'+data.length+' lignes</div>';
+el.innerHTML=h;
 }
-
-function renderTable(tableEl, columns, rows) {
-    let html = "<thead class='bg-gray-100 sticky top-0'><tr>";
-    columns.forEach(function(c) { html += '<th class="px-3 py-2 font-medium text-gray-600 whitespace-nowrap">' + esc(c) + '</th>'; });
-    html += "</tr></thead><tbody>";
-    rows.forEach(row => {
-        html += "<tr class='border-t'>";
-        columns.forEach(function(c) { html += '<td class="px-3 py-2 text-gray-700 whitespace-nowrap">' + esc(String(row[c] != null ? row[c] : '')) + '</td>'; });
-        html += "</tr>";
-    });
-    html += "</tbody>";
-    tableEl.innerHTML = html;
-}
-
-previewBtn.addEventListener("click", () => {
-    const text = userPrompt.value.trim();
-    if (!text) return showError("Veuillez decrire la transformation.");
-    conversationHistory.push(text);
-    userPrompt.value = "";
-    requestPreview();
+function go(n){
+document.querySelectorAll('.sp').forEach(function(e){
+var s=parseInt(e.getAttribute('data-step'));
+e.className='sp'+(s===n?' a':(s<n?' d':''));
 });
-
-modifyBtn.addEventListener("click", () => {
-    const text = modifyPrompt.value.trim();
-    if (!text) return showError("Veuillez decrire la modification.");
-    conversationHistory.push(text);
-    modifyPrompt.value = "";
-    requestPreview();
+['s1','s2','s3','s4'].forEach(function(id,i){
+document.getElementById(id).className=(i+1)===n?'':'hidden';
 });
-
-async function requestPreview() {
-    errorSec.classList.add("hidden");
-    promptSec.classList.add("hidden");
-    modifySec.classList.add("hidden");
-    transformedSec.classList.add("hidden");
-    loadingMsg.textContent = "Apercu en cours de generation...";
-    loadingSec.classList.remove("hidden");
-    setStep(3);
-    try {
-        const resp = await fetch(BACKEND_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                action: "preview",
-                columns: extractedPayload.columns,
-                sample: extractedPayload.sample,
-                history: conversationHistory
-            })
-        });
-        if (!resp.ok) {
-            const body = await resp.json().catch(() => ({}));
-            throw new Error(body.error || "Erreur serveur (" + resp.status + ")");
-        }
-        const data = await resp.json();
-        const p = data.preview;
-        renderTable(transformedTable, p.new_columns, p.transformed_sample);
-        descriptionText.textContent = p.description;
-        loadingSec.classList.add("hidden");
-        transformedSec.classList.remove("hidden");
-        renderHistory();
-        modifySec.classList.remove("hidden");
-    } catch (err) {
-        loadingSec.classList.add("hidden");
-        promptSec.classList.remove("hidden");
-        showError(err.message);
-    }
 }
-
-function renderHistory() {
-    historyList.innerHTML = "";
-    conversationHistory.forEach((h, i) => {
-        const div = document.createElement("div");
-        div.className = "text-xs bg-gray-50 border rounded px-3 py-1.5 text-gray-600";
-        div.textContent = (i + 1) + ". " + h;
-        historyList.appendChild(div);
-    });
-    historySec.classList.remove("hidden");
+var dz=document.getElementById('dropzone'),fi=document.getElementById('fi');
+dz.onclick=function(){fi.click();};
+dz.ondragover=function(e){e.preventDefault();};
+dz.ondrop=function(e){e.preventDefault();if(e.dataTransfer.files.length)load(e.dataTransfer.files[0]);};
+fi.onchange=function(){if(fi.files.length)load(fi.files[0]);};
+function load(f){
+var r=new FileReader();
+r.onload=function(e){
+var wb=XLSX.read(e.target.result,{type:'array'});
+var ws=wb.Sheets[wb.SheetNames[0]];
+D=XLSX.utils.sheet_to_json(ws,{defval:''});
+if(!D.length){alert('Fichier vide');return;}
+C=Object.keys(D[0]);
+H=[];
+tbl(document.getElementById('tO'),D,C);
+go(2);
+};
+r.readAsArrayBuffer(f);
 }
-
-validateBtn.addEventListener("click", async () => {
-    errorSec.classList.add("hidden");
-    modifySec.classList.add("hidden");
-    loadingMsg.textContent = "Generation du script Python...";
-    loadingSec.classList.remove("hidden");
-    setStep(4);
-    try {
-        const resp = await fetch(BACKEND_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                action: "generate",
-                columns: extractedPayload.columns,
-                sample: extractedPayload.sample,
-                history: conversationHistory
-            })
-        });
-        if (!resp.ok) {
-            const body = await resp.json().catch(() => ({}));
-            throw new Error(body.error || "Erreur serveur (" + resp.status + ")");
-        }
-        const data = await resp.json();
-        generatedScript = data.script;
-        loadingSec.classList.add("hidden");
-        resultSec.classList.remove("hidden");
-    } catch (err) {
-        loadingSec.classList.add("hidden");
-        modifySec.classList.remove("hidden");
-        showError(err.message);
-    }
+function api(txt,cb){
+fetch(API,{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({action:'transform',columns:C,sample:D.slice(0,3),instruction:txt,history:H})
+})
+.then(function(r){return r.json().then(function(b){if(!r.ok)throw new Error(b.error||'Erreur');return b;});})
+.then(function(b){
+H.push({role:'user',content:txt});
+H.push({role:'assistant',content:'OK'});
+try{
+var fn=new Function('data',b.js_code);
+T=fn(JSON.parse(JSON.stringify(D)));
+}catch(e){
+T=b.preview_data||T;
+}
+py=b.python_script||py;
+cb(null);
+})
+.catch(function(e){cb(e);});
+}
+document.getElementById('bGo').onclick=function(){
+var t=document.getElementById('ins').value.trim();
+if(!t){alert('Decrivez la transformation');return;}
+this.disabled=true;var self=this;
+document.getElementById('sp1').classList.remove('hidden');
+api(t,function(e){
+self.disabled=false;
+document.getElementById('sp1').classList.add('hidden');
+if(e){alert(e.message);return;}
+tbl(document.getElementById('tT'),T);
+go(3);
 });
-
-downloadBtn.addEventListener("click", () => {
-    if (!generatedScript) return;
-    const blob = new Blob([generatedScript], { type: "text/x-python" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href = url;
-    a.download = "transform_data.py";
-    a.click();
-    URL.revokeObjectURL(url);
+};
+document.getElementById('bRef').onclick=function(){
+var t=document.getElementById('ref').value.trim();
+if(!t){alert('Decrivez les modifications');return;}
+this.disabled=true;var self=this;
+document.getElementById('sp2').classList.remove('hidden');
+api(t,function(e){
+self.disabled=false;
+document.getElementById('sp2').classList.add('hidden');
+if(e){alert(e.message);return;}
+tbl(document.getElementById('tT'),T);
+document.getElementById('ref').value='';
 });
-
-restartBtn.addEventListener("click", () => resetUI());
-
-function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
-function showError(msg) { errorMsg.textContent = msg; errorSec.classList.remove("hidden"); }
-function resetUI() {
-    extractedPayload = null;
-    conversationHistory = [];
-    generatedScript = null;
-    [originalSec, promptSec, loadingSec, transformedSec, historySec, modifySec, resultSec, errorSec, stepIndicator]
-        .forEach(el => el.classList.add("hidden"));
-    dropZone.classList.remove("hidden");
-    userPrompt.value = "";
-    modifyPrompt.value = "";
-}
+};
+document.getElementById('bOk').onclick=function(){
+tbl(document.getElementById('tF'),T);
+go(4);
+};
+document.getElementById('bXl').onclick=function(){
+var ws=XLSX.utils.json_to_sheet(T);
+var wb=XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb,ws,'Resultat');
+XLSX.writeFile(wb,'resultat_transforme.xlsx');
+};
+document.getElementById('bPy').onclick=function(){
+if(!py){alert('Aucun script');return;}
+var b=new Blob([py],{type:'text/x-python'});
+var a=document.createElement('a');
+a.href=URL.createObjectURL(b);
+a.download='transform.py';
+a.click();
+};
+document.getElementById('bRe').onclick=function(){
+D=[];C=[];T=[];py='';H=[];
+document.getElementById('ins').value='';
+fi.value='';
+go(1);
+};
+})();
 </script>
-</body>
-</html>
+</body></html>
