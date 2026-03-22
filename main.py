@@ -11,25 +11,29 @@ ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'https://kreuille.github.io'
 
 genai.configure(api_key=GOOGLE_API_KEY)
 
-SYSTEM_PROMPT = """You are a data transformation expert. Given Excel column names, 3 sample rows, and a transformation instruction, respond with ONLY a valid JSON object (no markdown, no code fences).
+SYSTEM_PROMPT = """You are a data transformation expert. You receive Excel column names, 3 sample data rows, and a user instruction describing the transformation they want.
 
-The JSON must have exactly two fields:
+RESPOND WITH ONLY A VALID JSON OBJECT. No markdown, no code fences, no explanation. Just the JSON.
 
-1. "js_code": A JavaScript function body (ES5 ONLY). It receives a parameter named 'data' which is an array of objects (keys = column names). It must return the transformed array. STRICT RULES:
-   - Use ONLY 'var', NEVER 'let' or 'const'
-   - Use function() NEVER arrow functions =>
-   - Use string concatenation with + NEVER template literals or backticks
-   - Handle null/undefined values safely with checks
-   - The function body must end with 'return result;'
+The JSON has exactly 2 fields:
 
-2. "python_script": A complete standalone Python script using pandas and openpyxl that:
-   - Imports tkinter and uses filedialog.askopenfilename() to let the user pick the input Excel file
-   - Reads the Excel with pandas
-   - Applies the SAME transformation as the js_code
-   - Uses filedialog.asksaveasfilename() for the output path
-   - Saves the result as a new Excel file
+1. "js_code": The BODY of a JavaScript function (NOT the function declaration). This code receives a variable called "data" which is an array of objects where keys are column names. It must transform and return the result array.
+   CRITICAL RULES:
+   - Return ONLY the function body, NOT function(data){...}
+   - Start directly with var result = ... and end with return result;
+   - Use var (not let/const), function() (not =>)
+   - Use string concat + (not template literals)
+   - Handle null/undefined with checks like (row['col'] || '')
+   - EXAMPLE: "var result = data.map(function(row) { var r = {}; for(var k in row) { if(row.hasOwnProperty(k)) r[k] = row[k]; } r['FullName'] = (row['First'] || '') + ' ' + (row['Last'] || ''); return r; }); return result;"
 
-If there is conversation history, apply the NEW instruction on top of ALL previous transformations combined. Always return valid JSON only."""
+2. "python_script": A complete Python script that does the same transformation. Uses tkinter.filedialog for file selection, pandas for data manipulation, saves result as Excel.
+
+IMPORTANT FOR MODIFICATIONS:
+- If the conversation history contains previous code, the user wants to MODIFY that result
+- Write NEW code that combines ALL previous transformations + the new one
+- The new code must be standalone (not incremental) - it replaces the old code entirely
+
+ALWAYS respond in the user language for the python_script comments."""
 
 
 def _cors():
@@ -63,14 +67,15 @@ def clinical_transform(req):
             return (jsonify(error='Champs requis manquants.'), 400, cors)
 
         parts = [
-            'Colonnes: ' + json.dumps(columns, ensure_ascii=False),
-            'Echantillon (3 lignes): ' + json.dumps(sample, ensure_ascii=False)
+            'Colonnes du fichier Excel: ' + json.dumps(columns, ensure_ascii=False),
+            'Echantillon de 3 lignes: ' + json.dumps(sample, ensure_ascii=False)
         ]
         if history:
-            parts.append('Historique des transformations precedentes:')
+            parts.append('=== HISTORIQUE DES TRANSFORMATIONS ===')
             for item in history:
-                parts.append(item['role'] + ': ' + item['content'])
-        parts.append('Nouvelle instruction: ' + instruction)
+                parts.append(item['role'].upper() + ': ' + item['content'])
+            parts.append('=== FIN HISTORIQUE ===')
+        parts.append('NOUVELLE INSTRUCTION DE L UTILISATEUR: ' + instruction)
         user_msg = '\n'.join(parts)
 
         model = genai.GenerativeModel(
