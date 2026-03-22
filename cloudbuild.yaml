@@ -1,0 +1,26 @@
+steps:
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      - "functions"
+      - "deploy"
+      - "clinical-transform"
+      - "--gen2"
+      - "--region=${_REGION}"
+      - "--runtime=python312"
+      - "--trigger-http"
+      - "--allow-unauthenticated"
+      - "--entry-point=clinical_transform"
+      - "--source=."
+      - "--memory=512MB"
+      - "--timeout=120s"
+      - "--set-env-vars=ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},GOOGLE_API_KEY=${_GOOGLE_API_KEY},GEMINI_MODEL=${_GEMINI_MODEL}"
+
+substitutions:
+  _REGION: "europe-west9"
+  _ALLOWED_ORIGINS: "https://kreuille.github.io"
+  _GOOGLE_API_KEY: ""
+  _GEMINI_MODEL: "gemini-2.5-flash"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
