@@ -110,7 +110,7 @@ function api(txt,cb){
 fetch(API,{
 method:'POST',
 headers:{'Content-Type':'application/json'},
-body:JSON.stringify({action:'transform',columns:C,sample:D.slice(0,3),instruction:txt,history:H})
+body:JSON.stringify({action:'transform',columns:C,sample:D.slice(0,3),all_data:D,instruction:txt,history:H})
 })
 .then(function(r){return r.json().then(function(b){if(!r.ok)throw new Error(b.error||'Erreur');return b;});})
 .then(function(b){
@@ -128,6 +128,8 @@ alert('Erreur JS: '+e.message+'\n\nCode recu: '+b.js_code.substring(0,200));
 T=b.preview_data||T;
 }
 py=b.python_script||py;
+if(b.excel_b64){var bs=atob(b.excel_b64);var ab=new ArrayBuffer(bs.length);var ia=new Uint8Array(ab);for(var j=0;j<bs.length;j++)ia[j]=bs.charCodeAt(j);var bl=new Blob([ab],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});var dl=document.createElement('a');dl.href=URL.createObjectURL(bl);dl.download='apercu_transforme.xlsx';dl.click();}
+if(b.exec_error){alert('Note: erreur generation Excel: '+b.exec_error);}
 cb(null);
 })
 .catch(function(e){cb(e);});
