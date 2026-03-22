@@ -46,6 +46,7 @@
 <textarea id="ref" rows="3" class="w-full border rounded-lg p-3" placeholder="Decrivez les ajustements souhaites..."></textarea>
 <div class="flex items-center gap-3 mt-3">
 <button id="bDlInt" class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700">Telecharger Excel intermediaire</button>
+<button id="bUndo" class="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 disabled:opacity-50">Annuler</button>
 <button id="bRef" class="bg-yellow-500 text-white px-6 py-2 rounded-lg hover:bg-yellow-600 disabled:opacity-50">Modifier</button>
 <button id="bOk" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">Valider</button>
 <span id="sp2" class="text-blue-600 hidden">Modification en cours...</span>
@@ -61,7 +62,7 @@
 <script>
 (function(){
 var API='https://europe-west9-clinical-data-transformer.cloudfunctions.net/clinical-transform';
-var D=[],C=[],T=[],py='',H=[];
+var D=[],C=[],T=[],py='',H=[],undoStack=[];
 function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 function tbl(el,data,cols){
 if(!data||!data.length){el.innerHTML='<p class="p-4 text-gray-400">Aucune donnee</p>';return;}
@@ -127,6 +128,7 @@ console.error('JS exec error:',e,'Code:',b.js_code);
 alert('Erreur JS: '+e.message+'\n\nCode recu: '+b.js_code.substring(0,200));
 T=b.preview_data||T;
 }
+undoStack.push({T:JSON.parse(JSON.stringify(T)),py:py,H:H.slice()});
 py=b.python_script||py;
 if(b.excel_b64){var bs=atob(b.excel_b64);var ab=new ArrayBuffer(bs.length);var ia=new Uint8Array(ab);for(var j=0;j<bs.length;j++)ia[j]=bs.charCodeAt(j);var bl=new Blob([ab],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});var dl=document.createElement('a');dl.href=URL.createObjectURL(bl);dl.download='apercu_transforme.xlsx';dl.click();}
 if(b.exec_error){alert('Note: erreur generation Excel: '+b.exec_error);}
@@ -179,8 +181,9 @@ a.download='transform.py';
 a.click();
 };
 document.getElementById('bDlInt').onclick=function(){var ws=XLSX.utils.json_to_sheet(T);var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Apercu');XLSX.writeFile(wb,'apercu_intermediaire.xlsx');};
+document.getElementById('bUndo').onclick=function(){if(!undoStack.length){alert('Rien a annuler');return;}var prev=undoStack.pop();T=prev.T;py=prev.py;H=prev.H;tbl(document.getElementById('tT'),T);};
 document.getElementById('bRe').onclick=function(){
-D=[];C=[];T=[];py='';H=[];
+D=[];C=[];T=[];py='';H=[];undoStack=[];
 document.getElementById('ins').value='';
 fi.value='';
 go(1);
