@@ -119,6 +119,8 @@ try{
 var fn=new Function('data',b.js_code);
 T=fn(JSON.parse(JSON.stringify(D)));
 }catch(e){
+console.error('JS exec error:',e,'Code:',b.js_code);
+alert('Erreur JS: '+e.message+'\n\nCode recu: '+b.js_code.substring(0,200));
 T=b.preview_data||T;
 }
 py=b.python_script||py;
