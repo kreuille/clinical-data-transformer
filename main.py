@@ -1,162 +1,97 @@
-"""Cloud Function (Gen2) — Clinical Data Transformer backend.
-
-Two modes:
-- preview: Gemini transforms sample rows and returns a preview (JSON)
-- generate: Gemini generates a standalone Python script
-
-Both modes support conversation history for iterative refinement.
-"""
-
-import json
 import os
 import re
-
+import json
 import functions_framework
+from flask import jsonify, request
 import google.generativeai as genai
-from flask import jsonify
 
-# -- Configuration --
-ALLOWED_ORIGINS = os.environ.get(
-    "ALLOWED_ORIGINS",
-    "https://kreuille.github.io"
-).split(",")
+GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
+ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'https://kreuille.github.io')
 
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+genai.configure(api_key=GOOGLE_API_KEY)
 
-genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+SYSTEM_PROMPT = """You are a data transformation expert. Given Excel column names, 3 sample rows, and a transformation instruction, respond with ONLY a valid JSON object (no markdown, no code fences).
 
-# -- System Prompts --
-SYSTEM_PROMPT_PREVIEW = """\\
-Tu es un expert en transformation de donnees cliniques.
+The JSON must have exactly two fields:
 
-# MISSION
-On te donne des colonnes et 3 lignes echantillons d'un fichier Excel,
-ainsi qu'une serie d'instructions de transformation (historique).
-Tu dois appliquer TOUTES les instructions cumulees sur les 3 lignes
-et retourner le resultat.
+1. "js_code": A JavaScript function body (ES5 ONLY). It receives a parameter named 'data' which is an array of objects (keys = column names). It must return the transformed array. STRICT RULES:
+   - Use ONLY 'var', NEVER 'let' or 'const'
+   - Use function() NEVER arrow functions =>
+   - Use string concatenation with + NEVER template literals or backticks
+   - Handle null/undefined values safely with checks
+   - The function body must end with 'return result;'
 
-# FORMAT DE REPONSE — JSON STRICT
-Retourne UNIQUEMENT un objet JSON valide (sans balises markdown) avec :
-{
-  "new_columns": ["col1", "col2", ...],
-  "transformed_sample": [
-    {"col1": "val", "col2": "val"},
-    ...
-  ],
-  "description": "Liste a puces des operations effectuees"
-}
+2. "python_script": A complete standalone Python script using pandas and openpyxl that:
+   - Imports tkinter and uses filedialog.askopenfilename() to let the user pick the input Excel file
+   - Reads the Excel with pandas
+   - Applies the SAME transformation as the js_code
+   - Uses filedialog.asksaveasfilename() for the output path
+   - Saves the result as a new Excel file
 
-IMPORTANT :
-- Pas de ```json```, pas de commentaires, juste le JSON brut.
-- Le premier caractere doit etre {
-- Les valeurs doivent etre des strings ou des nombres, pas null.
-"""
-
-SYSTEM_PROMPT_GENERATE = """\\
-Tu es un generateur expert de scripts Python pour la transformation de donnees cliniques.
-
-# MISSION
-Genere un script Python UNIQUE, COMPLET et AUTONOME qui transforme un fichier Excel
-selon TOUTES les instructions de l'utilisateur (fournies comme historique cumule).
-
-# CONTRAINTES STRICTES
-1. Le script doit utiliser UNIQUEMENT les bibliotheques : pandas, openpyxl, tkinter.
-2. Le script doit commencer par ouvrir un `tkinter.filedialog.askopenfilename`
-   pour permettre a l'utilisateur de choisir son fichier Excel source.
-3. Le script doit sauvegarder le resultat dans un nouveau fichier Excel
-   (nom original suffixe `_transformed.xlsx`) via un `tkinter.filedialog.asksaveasfilename`.
-4. Inclure une gestion d'erreurs robuste avec des messages clairs en francais.
-5. Ajouter des commentaires en francais expliquant chaque etape.
-6. NE PAS inclure de code d'installation de packages (pip install).
-7. Le script doit fonctionner tel quel, sans modification, sur Windows, Mac et Linux.
-8. Utilise `if __name__ == "__main__":` comme point d'entree.
-
-# FORMAT DE REPONSE
-Retourne UNIQUEMENT le code Python brut, sans balises markdown, sans explications,
-sans ```python```. Le premier caractere doit etre un # ou un import.
-"""
+If there is conversation history, apply the NEW instruction on top of ALL previous transformations combined. Always return valid JSON only."""
 
 
-# -- CORS helper --
-def _cors_headers(origin):
-    headers = {
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Max-Age": "3600",
+def _cors():
+    origin = request.headers.get('Origin', '')
+    allowed = [o.strip() for o in ALLOWED_ORIGINS.split(',')]
+    h = {
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '3600'
     }
-    if origin and any(origin.startswith(o.strip()) for o in ALLOWED_ORIGINS):
-        headers["Access-Control-Allow-Origin"] = origin
-    return headers
+    h['Access-Control-Allow-Origin'] = origin if origin in allowed else ''
+    return h
 
 
-def _build_user_message(columns, sample, history):
-    data_context = (
-        f"Colonnes du fichier Excel : {json.dumps(columns, ensure_ascii=False)}\n\n"
-        f"Echantillon (3 premieres lignes) :\n"
-        f"{json.dumps(sample, ensure_ascii=False, indent=2)}\n"
-    )
-    instructions = "\n".join(
-        f"- Instruction {i+1}: {h}" for i, h in enumerate(history)
-    )
-    return f"{data_context}\n# INSTRUCTIONS DE TRANSFORMATION (cumul)\n{instructions}"
-
-
-# -- Cloud Function entry point --
 @functions_framework.http
-def clinical_transform(request):
-    origin = request.headers.get("Origin", "")
-    cors = _cors_headers(origin)
-
-    if request.method == "OPTIONS":
-        return ("", 204, cors)
-
-    if request.method != "POST":
-        return (jsonify(error="Method not allowed"), 405, cors)
-
+def clinical_transform(req):
+    cors = _cors()
+    if req.method == 'OPTIONS':
+        return ('', 204, cors)
     try:
-        body = request.get_json(silent=True) or {}
-        action = body.get("action", "generate")
-        columns = body.get("columns")
-        sample = body.get("sample")
-        history = body.get("history", [])
+        data = req.get_json(silent=True)
+        if not data:
+            return (jsonify(error='JSON invalide.'), 400, cors)
 
-        if not columns or not sample or not history:
-            return (
-                jsonify(error="Champs requis manquants (columns, sample, history)."),
-                400, cors,
-            )
-    except Exception:
-        return (jsonify(error="JSON invalide."), 400, cors)
+        columns = data.get('columns')
+        sample = data.get('sample')
+        instruction = data.get('instruction', '')
+        history = data.get('history', [])
 
-    user_message = _build_user_message(columns, sample, history)
+        if not columns or not sample:
+            return (jsonify(error='Champs requis manquants.'), 400, cors)
 
-    if action == "preview":
-        system_prompt = SYSTEM_PROMPT_PREVIEW
-    else:
-        system_prompt = SYSTEM_PROMPT_GENERATE
+        parts = [
+            'Colonnes: ' + json.dumps(columns, ensure_ascii=False),
+            'Echantillon (3 lignes): ' + json.dumps(sample, ensure_ascii=False)
+        ]
+        if history:
+            parts.append('Historique des transformations precedentes:')
+            for item in history:
+                parts.append(item['role'] + ': ' + item['content'])
+        parts.append('Nouvelle instruction: ' + instruction)
+        user_msg = '\n'.join(parts)
 
-    try:
         model = genai.GenerativeModel(
             model_name=GEMINI_MODEL,
-            system_instruction=system_prompt,
+            system_instruction=SYSTEM_PROMPT
         )
-        response = model.generate_content(user_message)
-        result_text = response.text.strip()
+        response = model.generate_content(user_msg)
+        txt = response.text.strip()
 
-        result_text = re.sub(r"^```(?:json|python)?\n?", "", result_text)
-        result_text = re.sub(r"\n?```$", "", result_text)
+        txt = re.sub(r'^```(?:json)?\n?', '', txt)
+        txt = re.sub(r'\n?```$', '', txt)
+
+        try:
+            result = json.loads(txt)
+        except json.JSONDecodeError:
+            return (jsonify(error='Reponse IA invalide', raw=txt), 500, cors)
+
+        return (jsonify(
+            js_code=result.get('js_code', ''),
+            python_script=result.get('python_script', '')
+        ), 200, cors)
 
     except Exception as exc:
-        return (jsonify(error=f"Erreur Gemini : {exc}"), 502, cors)
-
-    if action == "preview":
-        try:
-            preview_data = json.loads(result_text)
-            return (jsonify(preview=preview_data), 200, cors)
-        except json.JSONDecodeError:
-            return (
-                jsonify(error="Gemini n'a pas retourne un JSON valide.", raw=result_text),
-                502, cors,
-            )
-    else:
-        return (jsonify(script=result_text), 200, cors)
+        return (jsonify(error=str(exc)), 500, cors)
