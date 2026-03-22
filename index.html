@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clinical Data Transformer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .drop-zone.dragover { @apply border-blue-500 bg-blue-50; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-lg max-w-2xl w-full p-8">
+        <h1 class="text-2xl font-bold text-gray-800 mb-1">Clinical Data Transformer</h1>
+        <p class="text-sm text-gray-500 mb-6">
+            Chargez votre fichier Excel. Seuls les noms de colonnes et 3 lignes anonymisees sont envoyes au serveur.
+        </p>
+
+        <!-- Drop Zone -->
+        <div id="dropZone"
+             class="drop-zone border-2 border-dashed border-gray-300 rounded-xl p-10 text-center cursor-pointer hover:border-gray-400 transition mb-6">
+            <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+            </svg>
+            <p class="text-gray-600 font-medium">Glissez votre fichier Excel ici</p>
+            <p class="text-gray-400 text-sm mt-1">ou cliquez pour parcourir (.xlsx, .xls)</p>
+            <input id="fileInput" type="file" accept=".xlsx,.xls" class="hidden"/>
+        </div>
+
+        <!-- Preview -->
+        <div id="previewSection" class="hidden mb-6">
+            <h2 class="text-sm font-semibold text-gray-700 mb-2">Apercu des donnees envoyees</h2>
+            <div class="overflow-x-auto border rounded-lg">
+                <table id="previewTable" class="min-w-full text-xs text-left"></table>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">3 lignes echantillons — le fichier complet reste sur votre machine.</p>
+        </div>
+
+        <!-- Transformation Prompt -->
+        <div id="promptSection" class="hidden mb-6">
+            <label for="userPrompt" class="block text-sm font-semibold text-gray-700 mb-2">
+                Decrivez la transformation souhaitee
+            </label>
+            <textarea id="userPrompt" rows="4"
+                      class="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Ex: Fusionner les colonnes Nom et Prenom, convertir la colonne Date au format JJ/MM/AAAA, supprimer les doublons sur l'ID patient..."></textarea>
+        </div>
+
+        <!-- Generate Button -->
+        <button id="generateBtn"
+                class="hidden w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled>
+            Generer le script Python
+        </button>
+
+        <!-- Loading -->
+        <div id="loadingSection" class="hidden text-center py-6">
+            <div class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-r-transparent"></div>
+            <p class="text-sm text-gray-500 mt-3">Generation du script via Gemini...</p>
+        </div>
+
+        <!-- Result -->
+        <div id="resultSection" class="hidden">
+            <div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
+                <p class="text-green-800 font-medium text-sm">Script genere avec succes !</p>
+            </div>
+            <button id="downloadBtn"
+                    class="w-full bg-green-600 text-white font-semibold py-3 rounded-xl hover:bg-green-700 transition">
+                Telecharger transform_data.py
+            </button>
+            <p class="text-xs text-gray-400 mt-2 text-center">
+                Executez le script localement — il ouvrira un selecteur de fichier pour choisir votre Excel.
+            </p>
+        </div>
+
+        <!-- Error -->
+        <div id="errorSection" class="hidden">
+            <div class="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p class="text-red-800 font-medium text-sm" id="errorMsg"></p>
+            </div>
+        </div>
+    </div>
+
+<script>
+const BACKEND_URL = "https://europe-west9-clinical-data-transformer.cloudfunctions.net/clinical-transform";
+
+const dropZone     = document.getElementById("dropZone");
+const fileInput    = document.getElementById("fileInput");
+const previewSec   = document.getElementById("previewSection");
+const previewTable = document.getElementById("previewTable");
+const promptSec    = document.getElementById("promptSection");
+const userPrompt   = document.getElementById("userPrompt");
+const generateBtn  = document.getElementById("generateBtn");
+const loadingSec   = document.getElementById("loadingSection");
+const resultSec    = document.getElementById("resultSection");
+const downloadBtn  = document.getElementById("downloadBtn");
+const errorSec     = document.getElementById("errorSection");
+const errorMsg     = document.getElementById("errorMsg");
+
+let extractedPayload = null;
+let generatedScript  = null;
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragover"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+    resetUI();
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const wb   = XLSX.read(e.target.result, { type: "array" });
+            const ws   = wb.Sheets[wb.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
+            if (!json.length) throw new Error("Le fichier semble vide.");
+            const columns = Object.keys(json[0]);
+            const sample  = json.slice(0, 3).map(row => {
+                const out = {};
+                columns.forEach(c => {
+                    const val = String(row[c]);
+                    out[c] = val.length > 60 ? val.slice(0, 57) + "..." : val;
+                });
+                return out;
+            });
+            extractedPayload = { columns, sample };
+            showPreview(columns, sample);
+        } catch (err) {
+            showError("Erreur de lecture du fichier : " + err.message);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function showPreview(columns, sample) {
+    let html = "<thead class='bg-gray-100'><tr>";
+    columns.forEach(c => html += \`<th class="px-3 py-2 font-medium text-gray-600">\${esc(c)}</th>\`);
+    html += "</tr></thead><tbody>";
+    sample.forEach(row => {
+        html += "<tr class='border-t'>";
+        columns.forEach(c => html += \`<td class="px-3 py-2 text-gray-700">\${esc(String(row[c]))}</td>\`);
+        html += "</tr>";
+    });
+    html += "</tbody>";
+    previewTable.innerHTML = html;
+    previewSec.classList.remove("hidden");
+    promptSec.classList.remove("hidden");
+    generateBtn.classList.remove("hidden");
+    generateBtn.disabled = false;
+}
+
+generateBtn.addEventListener("click", async () => {
+    const prompt = userPrompt.value.trim();
+    if (!prompt) return showError("Veuillez decrire la transformation souhaitee.");
+    if (!extractedPayload) return showError("Veuillez d'abord charger un fichier Excel.");
+    generateBtn.classList.add("hidden");
+    loadingSec.classList.remove("hidden");
+    errorSec.classList.add("hidden");
+    resultSec.classList.add("hidden");
+    try {
+        const resp = await fetch(BACKEND_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                columns: extractedPayload.columns,
+                sample:  extractedPayload.sample,
+                prompt:  prompt
+            })
+        });
+        if (!resp.ok) {
+            const body = await resp.json().catch(() => ({}));
+            throw new Error(body.error || \`Erreur serveur (\${resp.status})\`);
+        }
+        const data = await resp.json();
+        generatedScript = data.script;
+        loadingSec.classList.add("hidden");
+        resultSec.classList.remove("hidden");
+    } catch (err) {
+        loadingSec.classList.add("hidden");
+        generateBtn.classList.remove("hidden");
+        showError(err.message);
+    }
+});
+
+downloadBtn.addEventListener("click", () => {
+    if (!generatedScript) return;
+    const blob = new Blob([generatedScript], { type: "text/x-python" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url;
+    a.download = "transform_data.py";
+    a.click();
+    URL.revokeObjectURL(url);
+});
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function showError(msg) { errorMsg.textContent = msg; errorSec.classList.remove("hidden"); }
+function resetUI() {
+    extractedPayload = null;
+    generatedScript  = null;
+    [previewSec, promptSec, generateBtn, loadingSec, resultSec, errorSec].forEach(el => el.classList.add("hidden"));
+    userPrompt.value = "";
+}
+</script>
+</body>
+</html>
