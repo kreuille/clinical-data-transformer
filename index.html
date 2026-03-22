@@ -45,6 +45,7 @@
 <h2 class="text-lg font-semibold mb-2">Modifications supplementaires ?</h2>
 <textarea id="ref" rows="3" class="w-full border rounded-lg p-3" placeholder="Decrivez les ajustements souhaites..."></textarea>
 <div class="flex items-center gap-3 mt-3">
+<button id="bDlInt" class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700">Telecharger Excel intermediaire</button>
 <button id="bRef" class="bg-yellow-500 text-white px-6 py-2 rounded-lg hover:bg-yellow-600 disabled:opacity-50">Modifier</button>
 <button id="bOk" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">Valider</button>
 <span id="sp2" class="text-blue-600 hidden">Modification en cours...</span>
@@ -175,6 +176,7 @@ a.href=URL.createObjectURL(b);
 a.download='transform.py';
 a.click();
 };
+document.getElementById('bDlInt').onclick=function(){var ws=XLSX.utils.json_to_sheet(T);var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Apercu');XLSX.writeFile(wb,'apercu_intermediaire.xlsx');};
 document.getElementById('bRe').onclick=function(){
 D=[];C=[];T=[];py='';H=[];
 document.getElementById('ins').value='';
