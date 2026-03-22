@@ -47,7 +47,7 @@ Retourne UNIQUEMENT un objet JSON valide (sans balises markdown) avec :
 }
 
 IMPORTANT :
-- Pas de \\`\\`\\`json\\`\\`\\`, pas de commentaires, juste le JSON brut.
+- Pas de ```json```, pas de commentaires, juste le JSON brut.
 - Le premier caractere doit etre {
 - Les valeurs doivent etre des strings ou des nombres, pas null.
 """
@@ -61,19 +61,19 @@ selon TOUTES les instructions de l'utilisateur (fournies comme historique cumule
 
 # CONTRAINTES STRICTES
 1. Le script doit utiliser UNIQUEMENT les bibliotheques : pandas, openpyxl, tkinter.
-2. Le script doit commencer par ouvrir un \\`tkinter.filedialog.askopenfilename\\`
+2. Le script doit commencer par ouvrir un `tkinter.filedialog.askopenfilename`
    pour permettre a l'utilisateur de choisir son fichier Excel source.
 3. Le script doit sauvegarder le resultat dans un nouveau fichier Excel
-   (nom original suffixe \\`_transformed.xlsx\\`) via un \\`tkinter.filedialog.asksaveasfilename\\`.
+   (nom original suffixe `_transformed.xlsx`) via un `tkinter.filedialog.asksaveasfilename`.
 4. Inclure une gestion d'erreurs robuste avec des messages clairs en francais.
 5. Ajouter des commentaires en francais expliquant chaque etape.
 6. NE PAS inclure de code d'installation de packages (pip install).
 7. Le script doit fonctionner tel quel, sans modification, sur Windows, Mac et Linux.
-8. Utilise \\`if __name__ == "__main__":\\` comme point d'entree.
+8. Utilise `if __name__ == "__main__":` comme point d'entree.
 
 # FORMAT DE REPONSE
 Retourne UNIQUEMENT le code Python brut, sans balises markdown, sans explications,
-sans \\`\\`\\`python\\`\\`\\`. Le premier caractere doit etre un # ou un import.
+sans ```python```. Le premier caractere doit etre un # ou un import.
 """
 
 
@@ -143,8 +143,8 @@ def clinical_transform(request):
         response = model.generate_content(user_message)
         result_text = response.text.strip()
 
-        result_text = re.sub(r"^\\`\\`\\`(?:json|python)?\n?", "", result_text)
-        result_text = re.sub(r"\n?\\`\\`\\`$", "", result_text)
+        result_text = re.sub(r"^```(?:json|python)?\n?", "", result_text)
+        result_text = re.sub(r"\n?```$", "", result_text)
 
     except Exception as exc:
         return (jsonify(error=f"Erreur Gemini : {exc}"), 502, cors)
